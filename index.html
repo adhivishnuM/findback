@@ -1,0 +1,1700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FindBack - Lost & Found Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            red: '#e63946',
+                            green: '#2a9d8f',
+                            black: '#121212',
+                            white: '#f8f8f8',
+                            blue: {
+                                light: '#3b82f6',
+                                dark: '#2563eb'
+                            },
+                            purple: '#8a2be2',
+                            orange: '#ff7f50',
+                            teal: '#20b2aa',
+                            gray: {
+                                dark: '#333333',
+                                medium: '#666666',
+                                light: '#999999',
+                                lighter: '#e0e0e0'
+                            }
+                        }
+                    },
+                    boxShadow: {
+                        'sharp': '0 2px 4px rgba(0, 0, 0, 0.1)',
+                        'card': '0 2px 6px rgba(0, 0, 0, 0.12)',
+                    },
+                    borderRadius: {
+                        'btn': '0.375rem',
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f8f8;
+        }
+        .page {
+            display: none;
+        }
+        .page.active {
+            display: block;
+        }
+        .modal {
+            display: none;
+        }
+        .modal.active {
+            display: block;
+        }
+        .badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            padding: 2px 6px;
+            background: #3b82f6;
+            color: white;
+            font-size: 10px;
+            border-radius: 9999px;
+        }
+        .loading-spinner {
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 3px solid #121212;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+        /* FIXED: Improved image scaling */
+        .item-image {
+            width: 100%;
+            height: 12rem;
+            object-fit: cover;
+            object-position: center;
+        }
+        .modal-image {
+            width: 100%;
+            height: 16rem;
+            object-fit: contain;
+            object-position: center;
+            background-color: #f3f4f6;
+        }
+        .preview-image {
+            max-height: 5rem;
+            max-width: 100%;
+            object-fit: contain;
+            object-position: center;
+        }
+        /* Add rounded corners to all buttons */
+        button {
+            border-radius: 0.375rem !important;
+        }
+        /* Add rounded corners to inputs and selects */
+        input, select, textarea {
+            border-radius: 0.375rem !important;
+        }
+        /* FIXED: Prevent button freezing */
+        .admin-button {
+            transition: all 0.2s ease-in-out;
+            position: relative;
+            overflow: hidden;
+        }
+        .admin-button:active {
+            transform: scale(0.98);
+        }
+        .admin-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback, memo, useMemo } = React;
+
+        // Initialize Firebase with your config
+        const firebaseConfig = {
+            apiKey: "AIzaSyCFvT22EEMyXZtB24MJWMHjCbY9r_ycAJw",
+            authDomain: "findlost-7a99d.firebaseapp.com",
+            databaseURL: "https://findlost-7a99d-default-rtdb.firebaseio.com",
+            projectId: "findlost-7a99d",
+            storageBucket: "findlost-7a99d.firebasestorage.app",
+            messagingSenderId: "23836551066",
+            appId: "1:23836551066:web:a22ace81de673dd2553c23",
+            measurementId: "G-2YTJBMB53C"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // Categories for items
+        const categories = [
+            "Electronics", "Jewelry", "Documents", "Keys", "Bags", 
+            "Clothing", "Accessories", "Pets", "Books", "Other"
+        ];
+
+        // Locations for dropdown
+        const locations = [
+            "Main Building", "Library", "Cafeteria", "Sports Complex", 
+            "Parking Lot", "Auditorium", "Classroom Block A", "Classroom Block B",
+            "Garden Area", "Bus Stop", "Other"
+        ];
+
+        // FIXED: Improved Input Component with better event handling
+        const InputField = memo(React.forwardRef(function InputField({ 
+            id, 
+            name, 
+            type = "text", 
+            placeholder, 
+            value, 
+            onChange, 
+            className, 
+            required = false,
+            max,
+            disabled = false
+        }, ref) {
+            const handleChange = useCallback((e) => {
+                if (disabled) return;
+                e.stopPropagation();
+                onChange && onChange(e);
+            }, [onChange, disabled]);
+            
+            return (
+                <input
+                    id={id}
+                    name={name}
+                    type={type}
+                    placeholder={placeholder}
+                    className={className}
+                    value={value || ''}
+                    onChange={handleChange}
+                    required={required}
+                    max={max}
+                    disabled={disabled}
+                    ref={ref}
+                />
+            );
+        }));
+
+        // FIXED: Improved Select Component
+        const SelectField = memo(React.forwardRef(function SelectField({ 
+            id, 
+            name, 
+            value, 
+            onChange, 
+            options, 
+            className, 
+            required = false,
+            disabled = false 
+        }, ref) {
+            const handleChange = useCallback((e) => {
+                if (disabled) return;
+                e.stopPropagation();
+                onChange && onChange(e);
+            }, [onChange, disabled]);
+            
+            return (
+                <select
+                    id={id}
+                    name={name}
+                    className={className}
+                    value={value || ''}
+                    onChange={handleChange}
+                    required={required}
+                    disabled={disabled}
+                    ref={ref}
+                >
+                    {options.map(option => (
+                        <option key={option} value={option}>{option}</option>
+                    ))}
+                </select>
+            );
+        }));
+
+        // FIXED: Improved TextArea Component
+        const TextAreaField = memo(React.forwardRef(function TextAreaField({ 
+            id, 
+            name, 
+            rows, 
+            placeholder, 
+            value, 
+            onChange, 
+            className, 
+            required = false,
+            disabled = false 
+        }, ref) {
+            const handleChange = useCallback((e) => {
+                if (disabled) return;
+                e.stopPropagation();
+                onChange && onChange(e);
+            }, [onChange, disabled]);
+            
+            return (
+                <textarea
+                    id={id}
+                    name={name}
+                    rows={rows}
+                    placeholder={placeholder}
+                    className={className}
+                    value={value || ''}
+                    onChange={handleChange}
+                    required={required}
+                    disabled={disabled}
+                    ref={ref}
+                />
+            );
+        }));
+
+        // FIXED: Main App Component with improved state management
+        const App = memo(() => {
+            const [currentPage, setCurrentPage] = useState('home');
+            const [items, setItems] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [recentOnly, setRecentOnly] = useState(false);
+            const [selectedItem, setSelectedItem] = useState(null);
+            const [showModal, setShowModal] = useState(false);
+            const [showDeleteModal, setShowDeleteModal] = useState(false);
+            const [adminPassword, setAdminPassword] = useState('');
+            const [passwordError, setPasswordError] = useState('');
+            const [itemToDelete, setItemToDelete] = useState(null);
+            const [isAdmin, setIsAdmin] = useState(false);
+            const [showAdminLogin, setShowAdminLogin] = useState(false);
+            const [selectedCategory, setSelectedCategory] = useState('all');
+            const [selectedType, setSelectedType] = useState('all');
+            const [stats, setStats] = useState({
+                totalItems: 0,
+                lostItems: 0,
+                foundItems: 0,
+                returnedItems: 0
+            });
+            const [newItem, setNewItem] = useState({
+                title: '',
+                description: '',
+                date: new Date().toISOString().split('T')[0],
+                image: '',
+                type: 'lost',
+                contactInfo: '',
+                category: 'Other',
+                location: 'Other',
+                status: 'active'
+            });
+            const [previewImage, setPreviewImage] = useState('');
+            const [notification, setNotification] = useState({ show: false, message: '', type: '' });
+            // FIXED: Add button states to prevent freezing
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [isDeleting, setIsDeleting] = useState(false);
+            const [isLoggingIn, setIsLoggingIn] = useState(false);
+            
+            const passwordInputRef = useRef(null);
+            const adminLoginInputRef = useRef(null);
+            const searchInputRef = useRef(null);
+
+            // FIXED: Improved Firebase data loading
+            useEffect(() => {
+                const fetchItems = async () => {
+                    try {
+                        setLoading(true);
+                        const itemsRef = database.ref('items');
+                        
+                        const unsubscribe = itemsRef.on('value', (snapshot) => {
+                            const data = snapshot.val();
+                            if (data) {
+                                const itemsArray = Object.keys(data).map(key => ({
+                                    id: key,
+                                    ...data[key]
+                                }));
+                                
+                                itemsArray.sort((a, b) => new Date(b.date) - new Date(a.date));
+                                setItems(itemsArray);
+                                
+                                // Calculate statistics
+                                const lostCount = itemsArray.filter(item => item.type === 'lost').length;
+                                const foundCount = itemsArray.filter(item => item.type === 'found').length;
+                                const returnedCount = itemsArray.filter(item => item.status === 'returned').length;
+                                
+                                setStats({
+                                    totalItems: itemsArray.length,
+                                    lostItems: lostCount,
+                                    foundItems: foundCount,
+                                    returnedItems: returnedCount
+                                });
+                            } else {
+                                // Sample data for first-time users
+                                const sampleData = [
+                                    {
+                                        id: "item1",
+                                        title: "Black Leather Wallet",
+                                        description: "Found a black leather wallet near the cafeteria entrance. Contains some cash and ID cards.",
+                                        date: "2024-01-15",
+                                        image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23333'/%3E%3Cpath d='M60 80 L140 80 L140 120 L60 120 Z' fill='%23222'/%3E%3Cpath d='M70 100 L130 100' stroke='%23555' stroke-width='4'/%3E%3C/svg%3E",
+                                        type: "found",
+                                        contactInfo: "john.doe@example.com",
+                                        category: "Accessories",
+                                        location: "Cafeteria",
+                                        status: "active",
+                                        timestamp: Date.now() - 86400000 * 2
+                                    },
+                                    {
+                                        id: "item2",
+                                        title: "iPhone 13 Pro",
+                                        description: "Lost my iPhone 13 Pro (blue) in the library on the second floor. It has a clear case with stickers.",
+                                        date: "2024-01-18",
+                                        image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23e0e0e0'/%3E%3Crect x='50' y='30' width='100' height='140' rx='10' fill='%233b82f6'/%3E%3Ccircle cx='100' cy='150' r='10' fill='%23fff' fill-opacity='0.5'/%3E%3C/svg%3E",
+                                        type: "lost",
+                                        contactInfo: "sarah.smith@example.com",
+                                        category: "Electronics",
+                                        location: "Library",
+                                        status: "active",
+                                        timestamp: Date.now() - 86400000 * 1
+                                    }
+                                ];
+                                
+                                sampleData.forEach(item => {
+                                    database.ref('items').push(item);
+                                });
+                                
+                                setItems(sampleData);
+                                setStats({
+                                    totalItems: sampleData.length,
+                                    lostItems: sampleData.filter(item => item.type === 'lost').length,
+                                    foundItems: sampleData.filter(item => item.type === 'found').length,
+                                    returnedItems: sampleData.filter(item => item.status === 'returned').length
+                                });
+                            }
+                            setLoading(false);
+                        });
+                        
+                    } catch (err) {
+                        console.error("Error fetching data:", err);
+                        setLoading(false);
+                        showNotification('Error loading data. Please refresh the page.', 'error');
+                    }
+                };
+                
+                fetchItems();
+                
+                return () => {
+                    database.ref('items').off();
+                };
+            }, []);
+
+            // FIXED: Improved focus management
+            useEffect(() => {
+                if (showAdminLogin && adminLoginInputRef.current) {
+                    const timer = setTimeout(() => {
+                        adminLoginInputRef.current?.focus();
+                    }, 100);
+                    return () => clearTimeout(timer);
+                }
+            }, [showAdminLogin]);
+
+            useEffect(() => {
+                if (showDeleteModal && passwordInputRef.current) {
+                    const timer = setTimeout(() => {
+                        passwordInputRef.current?.focus();
+                    }, 100);
+                    return () => clearTimeout(timer);
+                }
+            }, [showDeleteModal]);
+
+            const navigateTo = useCallback((page) => {
+                setCurrentPage(page);
+                window.scrollTo(0, 0);
+            }, []);
+
+            const handleSearch = useCallback((e) => {
+                setSearchTerm(e.target.value);
+            }, []);
+
+            const toggleRecentOnly = useCallback(() => {
+                setRecentOnly(prev => !prev);
+            }, []);
+
+            const handleCategoryFilter = useCallback((category) => {
+                setSelectedCategory(category);
+            }, []);
+
+            const handleTypeFilter = useCallback((type) => {
+                setSelectedType(type);
+            }, []);
+
+            const filteredItems = useMemo(() => {
+                return items.filter(item => {
+                    const matchesSearch = (item.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                                        item.description?.toLowerCase().includes(searchTerm.toLowerCase()));
+                    
+                    const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
+                    const matchesType = selectedType === 'all' || item.type === selectedType;
+                    
+                    if (recentOnly) {
+                        const sevenDaysAgo = new Date();
+                        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                        return matchesSearch && matchesCategory && matchesType && new Date(item.date) >= sevenDaysAgo;
+                    }
+                    
+                    return matchesSearch && matchesCategory && matchesType;
+                });
+            }, [items, searchTerm, selectedCategory, selectedType, recentOnly]);
+
+            const viewItemDetails = useCallback((item) => {
+                setSelectedItem(item);
+                setShowModal(true);
+            }, []);
+
+            const closeModal = useCallback(() => {
+                setShowModal(false);
+                setSelectedItem(null);
+            }, []);
+
+            // FIXED: Improved delete handler with proper state management
+            const handleDeleteClick = useCallback((item, e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (isDeleting) return; // Prevent multiple clicks
+                
+                setItemToDelete(item);
+                setAdminPassword('');
+                setPasswordError('');
+                setShowDeleteModal(true);
+            }, [isDeleting]);
+
+            // FIXED: Improved delete confirmation with loading state
+            const confirmDelete = useCallback(async () => {
+                if (isDeleting) return;
+                
+                if (adminPassword === "adhi1526") {
+                    setIsDeleting(true);
+                    setPasswordError('');
+                    
+                    try {
+                        await database.ref(`items/${itemToDelete.id}`).remove();
+                        
+                        setStats(prevStats => {
+                            const updatedStats = { ...prevStats, totalItems: prevStats.totalItems - 1 };
+                            if (itemToDelete.type === 'lost') updatedStats.lostItems--;
+                            if (itemToDelete.type === 'found') updatedStats.foundItems--;
+                            if (itemToDelete.status === 'returned') updatedStats.returnedItems--;
+                            return updatedStats;
+                        });
+                        
+                        setShowDeleteModal(false);
+                        setItemToDelete(null);
+                        setAdminPassword('');
+                        showNotification('Item deleted successfully', 'success');
+                    } catch (error) {
+                        console.error("Error deleting item:", error);
+                        showNotification('Error deleting item. Please try again.', 'error');
+                    } finally {
+                        setIsDeleting(false);
+                    }
+                } else {
+                    setPasswordError('Incorrect password. Please try again.');
+                }
+            }, [adminPassword, itemToDelete, isDeleting]);
+
+            // FIXED: Improved admin login with loading state
+            const handleAdminLogin = useCallback(async () => {
+                if (isLoggingIn) return;
+                
+                if (adminPassword === "adhi1526") {
+                    setIsLoggingIn(true);
+                    
+                    try {
+                        setIsAdmin(true);
+                        setShowAdminLogin(false);
+                        setAdminPassword('');
+                        setPasswordError('');
+                        showNotification('Admin login successful', 'success');
+                    } finally {
+                        setIsLoggingIn(false);
+                    }
+                } else {
+                    setPasswordError('Incorrect password. Please try again.');
+                }
+            }, [adminPassword, isLoggingIn]);
+
+            // FIXED: Improved input change handler
+            const handleInputChange = useCallback((e) => {
+                const { name, value } = e.target;
+                setNewItem(prevState => ({
+                    ...prevState,
+                    [name]: value
+                }));
+            }, []);
+
+            // FIXED: Improved image upload handler
+            const handleImageUpload = useCallback((e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    // Check file size (limit to 5MB)
+                    if (file.size > 5 * 1024 * 1024) {
+                        showNotification('Image size must be less than 5MB', 'error');
+                        return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setPreviewImage(reader.result);
+                        setNewItem(prevState => ({
+                            ...prevState,
+                            image: reader.result
+                        }));
+                    };
+                    reader.onerror = () => {
+                        showNotification('Error reading image file', 'error');
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }, []);
+
+            const markAsReturned = useCallback(async (item, e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                try {
+                    await database.ref(`items/${item.id}`).update({ status: 'returned' });
+                    
+                    setStats(prevStats => ({
+                        ...prevStats,
+                        returnedItems: prevStats.returnedItems + 1
+                    }));
+                    
+                    showNotification('Item marked as returned!', 'success');
+                } catch (error) {
+                    console.error("Error updating item:", error);
+                    showNotification('Error updating item. Please try again.', 'error');
+                }
+            }, []);
+
+            // FIXED: Improved form submission with loading state and validation
+            const handleSubmit = useCallback(async (e) => {
+                e.preventDefault();
+                if (isSubmitting) return;
+                
+                // Validate required fields
+                if (!newItem.title.trim()) {
+                    showNotification('Please enter an item title', 'error');
+                    return;
+                }
+                if (!newItem.description.trim()) {
+                    showNotification('Please enter an item description', 'error');
+                    return;
+                }
+                if (!newItem.contactInfo.trim()) {
+                    showNotification('Please enter contact information', 'error');
+                    return;
+                }
+                
+                setIsSubmitting(true);
+                
+                try {
+                    const newItemData = {
+                        ...newItem,
+                        title: newItem.title.trim(),
+                        description: newItem.description.trim(),
+                        contactInfo: newItem.contactInfo.trim(),
+                        date: newItem.date || new Date().toISOString().split('T')[0],
+                        image: newItem.image || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23e0e0e0'/%3E%3Cpath d='M70 100 L130 100 M100 70 L100 130' stroke='%23999' stroke-width='10'/%3E%3C/svg%3E",
+                        timestamp: Date.now()
+                    };
+                    
+                    await database.ref('items').push(newItemData);
+                    
+                    // Update stats
+                    setStats(prevStats => {
+                        const updatedStats = { ...prevStats, totalItems: prevStats.totalItems + 1 };
+                        if (newItemData.type === 'lost') updatedStats.lostItems++;
+                        if (newItemData.type === 'found') updatedStats.foundItems++;
+                        return updatedStats;
+                    });
+                    
+                    // Reset form
+                    setNewItem({
+                        title: '',
+                        description: '',
+                        date: new Date().toISOString().split('T')[0],
+                        image: '',
+                        type: 'lost',
+                        contactInfo: '',
+                        category: 'Other',
+                        location: 'Other',
+                        status: 'active'
+                    });
+                    setPreviewImage('');
+                    
+                    showNotification('Item reported successfully!', 'success');
+                    navigateTo('items');
+                } catch (error) {
+                    console.error("Error adding item:", error);
+                    showNotification('Error reporting item. Please try again.', 'error');
+                } finally {
+                    setIsSubmitting(false);
+                }
+            }, [newItem, isSubmitting, navigateTo]);
+
+            const showNotification = useCallback((message, type) => {
+                setNotification({ show: true, message, type });
+                setTimeout(() => {
+                    setNotification({ show: false, message: '', type: '' });
+                }, 3000);
+            }, []);
+
+            const handlePasswordChange = useCallback((e) => {
+                setAdminPassword(e.target.value);
+                setPasswordError('');
+            }, []);
+
+            // FIXED: Improved admin login toggle
+            const toggleAdminLogin = useCallback((e) => {
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                
+                if (isLoggingIn) return; // Prevent toggle during login process
+                
+                if (!showAdminLogin) {
+                    setAdminPassword('');
+                    setPasswordError('');
+                }
+                setShowAdminLogin(prev => !prev);
+            }, [showAdminLogin, isLoggingIn]);
+
+            // Header Component
+            const Header = useMemo(() => (
+                <header className={`bg-brand-black text-white shadow-sharp`}>
+                    <div className="container mx-auto px-4 py-4">
+                        <div className="flex flex-col md:flex-row justify-between items-center">
+                            <div className="flex items-center mb-4 md:mb-0">
+                                <div className="mr-3 bg-white bg-opacity-10 p-2 rounded-btn">
+                                    <svg className="w-8 h-8" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M21 11.5C21 16.75 12 22 12 22C12 22 3 16.75 3 11.5C3 7.02 7.02 3 12 3C16.98 3 21 7.02 21 11.5Z" fill="white" opacity="0.4"/>
+                                        <circle cx="12" cy="11" r="3" fill="white"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h1 className="text-2xl font-bold tracking-tight">FindBack</h1>
+                                    <p className="text-sm text-gray-300">Lost something? Report it. Found something? Help return it.</p>
+                                </div>
+                            </div>
+                            <nav className="flex space-x-1 md:space-x-4">
+                                <button 
+                                    onClick={() => navigateTo('home')}
+                                    className={`px-3 py-2 rounded-btn transition-all duration-200 ${currentPage === 'home' ? 'bg-brand-purple text-white font-medium' : 'text-white bg-transparent hover:bg-white hover:bg-opacity-20'}`}
+                                >
+                                    Home
+                                </button>
+                                <button 
+                                    onClick={() => navigateTo('report')}
+                                    className={`px-3 py-2 rounded-btn transition-all duration-200 ${currentPage === 'report' ? 'bg-brand-red text-white font-medium' : 'text-white bg-transparent hover:bg-white hover:bg-opacity-20'}`}
+                                >
+                                    Report Item
+                                </button>
+                                <button 
+                                    onClick={() => navigateTo('items')}
+                                    className={`px-3 py-2 rounded-btn transition-all duration-200 ${currentPage === 'items' ? 'bg-brand-green text-white font-medium' : 'text-white bg-transparent hover:bg-white hover:bg-opacity-20'}`}
+                                >
+                                    View Items
+                                </button>
+                                <button 
+                                    onClick={() => navigateTo('stats')}
+                                    className={`px-3 py-2 rounded-btn transition-all duration-200 ${currentPage === 'stats' ? 'bg-brand-orange text-white font-medium' : 'text-white bg-transparent hover:bg-white hover:bg-opacity-20'}`}
+                                >
+                                    Statistics
+                                </button>
+                                {!isAdmin ? (
+                                    <button 
+                                        onClick={toggleAdminLogin}
+                                        disabled={isLoggingIn}
+                                        className="admin-button px-3 py-2 bg-brand-blue-light text-white hover:bg-brand-blue-dark rounded-btn disabled:opacity-50"
+                                    >
+                                        {isLoggingIn ? 'Logging in...' : 'Admin'}
+                                    </button>
+                                ) : (
+                                    <button 
+                                        onClick={() => {
+                                            setIsAdmin(false);
+                                            showNotification('Admin mode disabled', 'success');
+                                        }}
+                                        className="admin-button px-3 py-2 bg-brand-blue-light text-white hover:bg-brand-blue-dark relative rounded-btn"
+                                    >
+                                        Admin Mode
+                                        <span className="badge">✓</span>
+                                    </button>
+                                )}
+                            </nav>
+                        </div>
+                    </div>
+                </header>
+            ), [currentPage, isAdmin, isLoggingIn, navigateTo, toggleAdminLogin]);
+
+            const HomePage = useMemo(() => (
+                <div className={`page active`}>
+                    <div className="bg-gradient-to-b from-gray-50 to-white py-16 px-4">
+                        <div className="container mx-auto max-w-4xl text-center">
+                            <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6 tracking-tight">Welcome to FindBack</h1>
+                            <p className="text-xl text-gray-600 mb-10">The community-driven lost and found platform</p>
+                            
+                            <div className="grid md:grid-cols-2 gap-6 mb-12">
+                                <div className="bg-white p-8 shadow-sharp border-t-4 border-brand-red rounded-btn">
+                                    <div className="bg-red-100 w-16 h-16 flex items-center justify-center mx-auto mb-4 rounded-full">
+                                        <svg className="w-8 h-8 text-brand-red" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                    <h2 className="text-2xl font-semibold text-gray-900 mb-3">Lost Something?</h2>
+                                    <p className="text-gray-600 mb-6">Report your lost item and let our community help you find it.</p>
+                                    <button 
+                                        onClick={() => {
+                                            setNewItem(prevState => ({...prevState, type: 'lost'}));
+                                            navigateTo('report');
+                                        }}
+                                        className="bg-brand-red hover:bg-red-700 text-white font-medium py-2 px-6 shadow-sharp rounded-btn transition-all duration-200"
+                                    >
+                                        Report Lost Item
+                                    </button>
+                                </div>
+                                
+                                <div className="bg-white p-8 shadow-sharp border-t-4 border-brand-green rounded-btn">
+                                    <div className="bg-green-100 w-16 h-16 flex items-center justify-center mx-auto mb-4 rounded-full">
+                                        <svg className="w-8 h-8 text-brand-green" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"></path>
+                                            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                    <h2 className="text-2xl font-semibold text-gray-900 mb-3">Found Something?</h2>
+                                    <p className="text-gray-600 mb-6">Report what you've found and help reunite items with their owners.</p>
+                                    <button 
+                                        onClick={() => {
+                                            setNewItem(prevState => ({...prevState, type: 'found'}));
+                                            navigateTo('report');
+                                        }}
+                                        className="bg-brand-green hover:bg-green-700 text-white font-medium py-2 px-6 shadow-sharp rounded-btn transition-all duration-200"
+                                    >
+                                        Report Found Item
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-gray-50 p-8 border border-gray-200 shadow-sharp rounded-btn">
+                                <h2 className="text-2xl font-semibold text-gray-900 mb-4">Browse Recent Items</h2>
+                                <p className="text-gray-600 mb-6">Check if someone has already found what you're looking for.</p>
+                                <button 
+                                    onClick={() => navigateTo('items')}
+                                    className="bg-brand-black hover:bg-gray-800 text-white font-medium py-2 px-6 shadow-sharp rounded-btn transition-all duration-200"
+                                >
+                                    View All Items
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="container mx-auto max-w-4xl py-12 px-4">
+                        <h2 className="text-3xl font-bold text-center text-gray-900 mb-12 tracking-tight">How It Works</h2>
+                        
+                        <div className="grid md:grid-cols-3 gap-8">
+                            <div className="text-center">
+                                <div className="bg-red-100 w-16 h-16 flex items-center justify-center mx-auto mb-4 rounded-full">
+                                    <span className="text-2xl font-bold text-brand-red">1</span>
+                                </div>
+                                <h3 className="text-xl font-semibold text-gray-900 mb-2">Report</h3>
+                                <p className="text-gray-600">Submit details about the item you lost or found.</p>
+                            </div>
+                            
+                            <div className="text-center">
+                                <div className="bg-gray-100 w-16 h-16 flex items-center justify-center mx-auto mb-4 rounded-full">
+                                    <span className="text-2xl font-bold text-gray-900">2</span>
+                                </div>
+                                <h3 className="text-xl font-semibold text-gray-900 mb-2">Connect</h3>
+                                <p className="text-gray-600">We'll help match lost items with found reports.</p>
+                            </div>
+                            
+                            <div className="text-center">
+                                <div className="bg-green-100 w-16 h-16 flex items-center justify-center mx-auto mb-4 rounded-full">
+                                    <span className="text-2xl font-bold text-brand-green">3</span>
+                                </div>
+                                <h3 className="text-xl font-semibold text-gray-900 mb-2">Reunite</h3>
+                                <p className="text-gray-600">Get your belongings back or help others find theirs.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="container mx-auto max-w-4xl py-12 px-4 mb-8">
+                        <div className="bg-white p-8 shadow-sharp border-l-4 border-brand-purple rounded-btn">
+                            <h2 className="text-2xl font-semibold text-gray-900 mb-4">Contact Us</h2>
+                            <p className="text-gray-600 mb-6">Have questions or need assistance with the platform? Feel free to reach out to our support team.</p>
+                            
+                            <div className="flex items-center mb-4">
+                                <svg className="w-5 h-5 text-brand-purple mr-2" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path>
+                                    <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path>
+                                </svg>
+                                <a href="mailto:findbackthelost@gmail.com" className="text-gray-900 hover:text-brand-purple">
+                                    findbackthelost@gmail.com
+                                </a>
+                            </div>
+                            
+                            <div className="flex items-center">
+                                <svg className="w-5 h-5 text-brand-purple mr-2" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"></path>
+                                </svg>
+                                <span className="text-gray-600">Response time: Within 24 hours</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ), [navigateTo, setNewItem]);
+
+            const ItemsPage = useMemo(() => (
+                <div className={`page ${currentPage === 'items' ? 'active' : ''}`}>
+                    <div className="container mx-auto px-4 py-8">
+                        <h1 className="text-3xl font-bold text-gray-900 mb-8 tracking-tight">Browse Lost & Found Items</h1>
+                        
+                        <div className="bg-white shadow-sharp p-4 mb-8 border-l-4 border-brand-green rounded-btn">
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                <div className="relative flex-grow">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    <InputField
+                                        id="search"
+                                        name="search"
+                                        placeholder="Search items (e.g., 'wallet', 'keys')"
+                                        className="pl-10 pr-4 py-2 w-full border border-gray-300 focus:outline-none focus:border-brand-green rounded-btn"
+                                        value={searchTerm}
+                                        onChange={handleSearch}
+                                        ref={searchInputRef}
+                                    />
+                                </div>
+                                
+                                <div className="flex items-center">
+                                    <input
+                                        type="checkbox"
+                                        id="recentOnly"
+                                        className="w-4 h-4 text-brand-green rounded"
+                                        checked={recentOnly}
+                                        onChange={toggleRecentOnly}
+                                    />
+                                    <label htmlFor="recentOnly" className="ml-2 text-gray-700">
+                                        Show only items from last 7 days
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div className="mt-4 border-t pt-4">
+                                <div className="mb-3">
+                                    <h3 className="text-sm font-medium text-gray-700 mb-2">Filter by Category:</h3>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button 
+                                            onClick={() => handleCategoryFilter('all')}
+                                            className={`px-3 py-1 text-xs font-medium rounded-btn transition-all duration-200 ${
+                                                selectedCategory === 'all' 
+                                                ? 'bg-brand-green text-white' 
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                        >
+                                            All
+                                        </button>
+                                        {categories.map(category => (
+                                            <button 
+                                                key={category}
+                                                onClick={() => handleCategoryFilter(category)}
+                                                className={`px-3 py-1 text-xs font-medium rounded-btn transition-all duration-200 ${
+                                                    selectedCategory === category 
+                                                    ? 'bg-brand-green text-white' 
+                                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                }`}
+                                            >
+                                                {category}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <h3 className="text-sm font-medium text-gray-700 mb-2">Filter by Type:</h3>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => handleTypeFilter('all')}
+                                            className={`px-3 py-1 text-xs font-medium rounded-btn transition-all duration-200 ${
+                                                selectedType === 'all' 
+                                                ? 'bg-brand-green text-white' 
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                        >
+                                            All
+                                        </button>
+                                        <button 
+                                            onClick={() => handleTypeFilter('lost')}
+                                            className={`px-3 py-1 text-xs font-medium rounded-btn transition-all duration-200 ${
+                                                selectedType === 'lost' 
+                                                ? 'bg-brand-red text-white' 
+                                                : 'bg-red-50 text-brand-red hover:bg-red-100'
+                                            }`}
+                                        >
+                                            Lost
+                                        </button>
+                                        <button 
+                                            onClick={() => handleTypeFilter('found')}
+                                            className={`px-3 py-1 text-xs font-medium rounded-btn transition-all duration-200 ${
+                                                selectedType === 'found' 
+                                                ? 'bg-brand-green text-white' 
+                                                : 'bg-green-50 text-brand-green hover:bg-green-100'
+                                            }`}
+                                        >
+                                            Found
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {loading ? (
+                            <div className="flex justify-center items-center py-20">
+                                <div className="loading-spinner mr-3"></div>
+                                <span className="text-gray-600">Loading items...</span>
+                            </div>
+                        ) : filteredItems.length === 0 ? (
+                            <div className="text-center py-12">
+                                <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <h3 className="mt-2 text-lg font-medium text-gray-900">No items found</h3>
+                                <p className="mt-1 text-gray-500">Try adjusting your search or filter criteria.</p>
+                            </div>
+                        ) : (
+                            <div className="card-grid">
+                                {filteredItems.map((item) => (
+                                    <div 
+                                        key={item.id} 
+                                        className={`bg-white shadow-sharp cursor-pointer rounded-btn overflow-hidden transition-all duration-200 hover:shadow-lg ${
+                                            item.status === 'returned' ? 'opacity-70' : ''
+                                        }`} 
+                                        onClick={() => viewItemDetails(item)}
+                                    >
+                                        <div className="relative overflow-hidden">
+                                            <img 
+                                                src={item.image} 
+                                                alt={item.title}
+                                                className="item-image transition-transform duration-200 hover:scale-105"
+                                                onError={(e) => {
+                                                    e.target.onerror = null;
+                                                    e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23e0e0e0'/%3E%3Cpath d='M70 100 L130 100 M100 70 L100 130' stroke='%23999' stroke-width='10'/%3E%3C/svg%3E";
+                                                }}
+                                            />
+                                            <div className={`absolute top-2 right-2 px-3 py-1 text-xs font-medium shadow-md rounded-btn ${
+                                                item.type === 'lost' ? 'bg-red-100 text-brand-red' : 'bg-green-100 text-brand-green'
+                                            }`}>
+                                                {item.type === 'lost' ? 'Lost' : 'Found'}
+                                            </div>
+                                            
+                                            {item.status === 'returned' && (
+                                                <div className="absolute inset-0 bg-white bg-opacity-70 flex items-center justify-center">
+                                                    <div className="bg-green-100 text-green-800 px-4 py-2 font-medium shadow-md rounded-btn">
+                                                        Returned to Owner
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {isAdmin && (
+                                                <div className="absolute top-2 left-2 flex space-x-2">
+                                                    <button 
+                                                        onClick={(e) => handleDeleteClick(item, e)}
+                                                        disabled={isDeleting}
+                                                        className="bg-white bg-opacity-80 p-1 hover:bg-red-100 shadow-md rounded-btn transition-all duration-200 disabled:opacity-50"
+                                                        title="Delete item (Admin only)"
+                                                    >
+                                                        <svg className="w-5 h-5 text-brand-red" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                                                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd"></path>
+                                                        </svg>
+                                                    </button>
+                                                    
+                                                    {item.status !== 'returned' && (
+                                                        <button 
+                                                            onClick={(e) => markAsReturned(item, e)}
+                                                            className="bg-white bg-opacity-80 p-1 hover:bg-green-100 shadow-md rounded-btn transition-all duration-200"
+                                                            title="Mark as returned (Admin only)"
+                                                        >
+                                                            <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                                                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"></path>
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="p-5">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <h3 className="text-lg font-semibold text-gray-900 truncate">{item.title}</h3>
+                                                {item.category && (
+                                                    <span className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-btn ml-2 flex-shrink-0">
+                                                        {item.category}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-gray-600 text-sm mb-4 line-clamp-2">{item.description}</p>
+                                            <div className="flex justify-between items-center">
+                                                <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-btn">
+                                                    {new Date(item.date).toLocaleDateString()}
+                                                </span>
+                                                <button 
+                                                    className={`text-sm font-medium flex items-center transition-all duration-200 ${
+                                                        item.type === 'lost' ? 'text-brand-red hover:text-red-700' : 'text-brand-green hover:text-green-700'
+                                                    }`}
+                                                >
+                                                    View Details
+                                                    <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ), [currentPage, loading, filteredItems, searchTerm, recentOnly, selectedCategory, selectedType, isAdmin, isDeleting, handleSearch, toggleRecentOnly, handleCategoryFilter, handleTypeFilter, viewItemDetails, handleDeleteClick, markAsReturned]);
+
+            const ReportItemPage = useMemo(() => (
+                <div className={`page ${currentPage === 'report' ? 'active' : ''}`}>
+                    <div className="container mx-auto px-4 py-8 max-w-2xl">
+                        <h1 className="text-3xl font-bold text-gray-900 mb-8 tracking-tight">Report an Item</h1>
+                        
+                        <div className={`bg-white shadow-sharp p-6 border-t-4 rounded-btn ${newItem.type === 'lost' ? 'border-brand-red' : 'border-brand-green'}`}>
+                            <form onSubmit={handleSubmit}>
+                                <div className="mb-6">
+                                    <label className="block text-gray-700 font-medium mb-2" htmlFor="itemType">
+                                        Item Status
+                                    </label>
+                                    <div className="flex space-x-4">
+                                        <label className={`inline-flex items-center p-3 border rounded-btn cursor-pointer transition-all duration-200 ${newItem.type === 'lost' ? 'border-brand-red bg-red-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                            <input 
+                                                type="radio" 
+                                                name="type" 
+                                                value="lost" 
+                                                checked={newItem.type === 'lost'} 
+                                                onChange={handleInputChange}
+                                                disabled={isSubmitting}
+                                                className="h-4 w-4 text-brand-red"
+                                            />
+                                            <span className="ml-2 text-gray-700">I lost this item</span>
+                                        </label>
+                                        <label className={`inline-flex items-center p-3 border rounded-btn cursor-pointer transition-all duration-200 ${newItem.type === 'found' ? 'border-brand-green bg-green-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                            <input 
+                                                type="radio" 
+                                                name="type" 
+                                                value="found" 
+                                                checked={newItem.type === 'found'} 
+                                                onChange={handleInputChange}
+                                                disabled={isSubmitting}
+                                                className="h-4 w-4 text-brand-green"
+                                            />
+                                            <span className="ml-2 text-gray-700">I found this item</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div className="mb-6">
+                                    <label className="block text-gray-700 font-medium mb-2" htmlFor="title">
+                                        Item Title*
+                                    </label>
+                                    <InputField
+                                        id="title"
+                                        name="title"
+                                        placeholder="E.g., Black Leather Wallet, iPhone 13 Pro"
+                                        className="w-full px-4 py-3 border border-gray-300 shadow-sm rounded-btn focus:border-brand-green focus:outline-none"
+                                        value={newItem.title}
+                                        onChange={handleInputChange}
+                                        disabled={isSubmitting}
+                                        required={true}
+                                    />
+                                </div>
+                                
+                                <div className="mb-6">
+                                    <label className="block text-gray-700 font-medium mb-2" htmlFor="category">
+                                        Category*
+                                    </label>
+                                    <SelectField
+                                        id="category"
+                                        name="category"
+                                        className="w-full px-4 py-3 border border-gray-300 shadow-sm rounded-btn focus:border-brand-green focus:outline-none"
+                                        value={newItem.category}
+                                        onChange={handleInputChange}
+                                        options={categories}
+                                        disabled={isSubmitting}
+                                        required={true}
+                                    />
+                                </div>
+                                
+                                <div className="mb-6">
+                                    <label className="block text-gray-700 font-medium mb-2" htmlFor="description">
+                                        Description*
+                                    </label>
+                                    <TextAreaField
+                                        id="description"
+                                        name="description"
+                                        rows="4"
+                                        placeholder="Provide details about the item, where it was lost/found, any identifying features, etc."
+                                        className="w-full px-4 py-3 border border-gray-300 shadow-sm rounded-btn focus:border-brand-green focus:outline-none"
+                                        value={newItem.description}
+                                        onChange={handleInputChange}
+                                        disabled={isSubmitting}
+                                        required={true}
+                                    />
+                                </div>
+                                
+                                <div className="mb-6">
+                                    <label className="block text-gray-700 font-medium mb-2" htmlFor="location">
+                                        Location*
+                                    </label>
+                                    <SelectField
+                                        id="location"
+                                        name="location"
+                                        className="w-full px-4 py-3 border border-gray-300 shadow-sm rounded-btn focus:border-brand-green focus:outline-none"
+                                        value={newItem.location}
+                                        onChange={handleInputChange}
+                                        options={locations}
+                                        disabled={isSubmitting}
+                                        required={true}
+                                    />
+                                </div>
+                                
+                                <div className="mb-6">
+                                    <label className="block text-gray-700 font-medium mb-2" htmlFor="date">
+                                        Date Lost/Found
+                                    </label>
+                                    <InputField
+                                        type="date"
+                                        id="date"
+                                        name="date"
+                                        className="w-full px-4 py-3 border border-gray-300 shadow-sm rounded-btn focus:border-brand-green focus:outline-none"
+                                        value={newItem.date}
+                                        onChange={handleInputChange}
+                                        disabled={isSubmitting}
+                                        max={new Date().toISOString().split('T')[0]}
+                                    />
+                                </div>
+                                
+                                <div className="mb-6">
+                                    <label className="block text-gray-700 font-medium mb-2" htmlFor="contactInfo">
+                                        Contact Information*
+                                    </label>
+                                    <InputField
+                                        id="contactInfo"
+                                        name="contactInfo"
+                                        placeholder="Your email or phone number"
+                                        className="w-full px-4 py-3 border border-gray-300 shadow-sm rounded-btn focus:border-brand-green focus:outline-none"
+                                        value={newItem.contactInfo}
+                                        onChange={handleInputChange}
+                                        disabled={isSubmitting}
+                                        required={true}
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">This will be visible to users who view your item.</p>
+                                </div>
+                                
+                                <div className="mb-8">
+                                    <label className="block text-gray-700 font-medium mb-2" htmlFor="image">
+                                        Upload Image
+                                    </label>
+                                    <div className="flex items-center justify-center w-full">
+                                        <label className="flex flex-col w-full h-32 border-2 border-dashed border-gray-300 hover:bg-gray-50 hover:border-gray-400 cursor-pointer rounded-btn transition-all duration-200">
+                                            <div className="flex flex-col items-center justify-center pt-7">
+                                                {previewImage ? (
+                                                    <img src={previewImage} alt="Preview" className="preview-image" />
+                                                ) : (
+                                                    <>
+                                                        <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                                        </svg>
+                                                        <p className="pt-1 text-sm text-gray-500">Upload an image of the item</p>
+                                                    </>
+                                                )}
+                                            </div>
+                                            <input 
+                                                type="file" 
+                                                className="opacity-0" 
+                                                accept="image/*"
+                                                onChange={handleImageUpload}
+                                                disabled={isSubmitting}
+                                            />
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex justify-end">
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className={`${newItem.type === 'lost' ? 'bg-brand-red hover:bg-red-700' : 'bg-brand-green hover:bg-green-700'} text-white font-medium py-3 px-8 shadow-sharp rounded-btn transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed`}
+                                    >
+                                        {isSubmitting ? 'Submitting...' : 'Submit Report'}
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            ), [currentPage, newItem, previewImage, isSubmitting, handleSubmit, handleInputChange, handleImageUpload]);
+
+            const StatsPage = useMemo(() => (
+                <div className={`page ${currentPage === 'stats' ? 'active' : ''}`}>
+                    <div className="container mx-auto px-4 py-8">
+                        <h1 className="text-3xl font-bold text-gray-900 mb-8 tracking-tight">Platform Statistics</h1>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+                            <div className="bg-white p-6 shadow-sharp border-t-4 border-brand-orange rounded-btn">
+                                <h3 className="text-lg font-medium text-gray-500 mb-1">Total Items</h3>
+                                <p className="text-4xl font-bold text-brand-orange">{stats.totalItems}</p>
+                                <div className="mt-4 pt-4 border-t border-gray-100">
+                                    <p className="text-sm text-gray-500">All items reported on the platform</p>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-white p-6 shadow-sharp border-t-4 border-brand-red rounded-btn">
+                                <h3 className="text-lg font-medium text-gray-500 mb-1">Lost Items</h3>
+                                <p className="text-4xl font-bold text-brand-red">{stats.lostItems}</p>
+                                <div className="mt-4 pt-4 border-t border-gray-100">
+                                    <p className="text-sm text-gray-500">Items reported as lost</p>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-white p-6 shadow-sharp border-t-4 border-brand-green rounded-btn">
+                                <h3 className="text-lg font-medium text-gray-500 mb-1">Found Items</h3>
+                                <p className="text-4xl font-bold text-brand-green">{stats.foundItems}</p>
+                                <div className="mt-4 pt-4 border-t border-gray-100">
+                                    <p className="text-sm text-gray-500">Items reported as found</p>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-white p-6 shadow-sharp border-t-4 border-teal-500 rounded-btn">
+                                <h3 className="text-lg font-medium text-gray-500 mb-1">Returned Items</h3>
+                                <p className="text-4xl font-bold text-teal-600">{stats.returnedItems}</p>
+                                <div className="mt-4 pt-4 border-t border-gray-100">
+                                    <p className="text-sm text-gray-500">Items returned to owners</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="bg-white shadow-sharp p-6 mb-10 border-l-4 border-brand-orange rounded-btn">
+                            <h2 className="text-2xl font-bold text-gray-900 mb-6">Recent Activity</h2>
+                            
+                            {loading ? (
+                                <div className="flex justify-center items-center py-10">
+                                    <div className="loading-spinner mr-3"></div>
+                                    <span className="text-gray-600">Loading activity...</span>
+                                </div>
+                            ) : items.length === 0 ? (
+                                <p className="text-gray-500 text-center py-8">No activity to display yet.</p>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                        <thead className="bg-gray-50">
+                                            <tr>
+                                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
+                                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-200">
+                                            {items.slice(0, 10).map((item) => (
+                                                <tr key={item.id} className="hover:bg-gray-50 cursor-pointer transition-all duration-200" onClick={() => viewItemDetails(item)}>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <div className="flex items-center">
+                                                            <div className="h-10 w-10 flex-shrink-0">
+                                                                <img 
+                                                                    className="h-10 w-10 object-cover rounded-btn" 
+                                                                    src={item.image} 
+                                                                    alt={item.title}
+                                                                    onError={(e) => {
+                                                                        e.target.onerror = null;
+                                                                        e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e0e0e0'/%3E%3Cpath d='M35 50 L65 50 M50 35 L50 65' stroke='%23999' stroke-width='5'/%3E%3C/svg%3E";
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                            <div className="ml-4">
+                                                                <div className="text-sm font-medium text-gray-900">{item.title}</div>
+                                                                <div className="text-sm text-gray-500 truncate max-w-xs">{item.description}</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                                            item.type === 'lost' 
+                                                            ? 'bg-red-100 text-red-800' 
+                                                            : 'bg-green-100 text-green-800'
+                                                        }`}>
+                                                            {item.type === 'lost' ? 'Lost' : 'Found'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        {item.category || 'Other'}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        {new Date(item.date).toLocaleDateString()}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                                            item.status === 'returned' 
+                                                            ? 'bg-green-100 text-green-800' 
+                                                            : 'bg-yellow-100 text-yellow-800'
+                                                        }`}>
+                                                            {item.status === 'returned' ? 'Returned' : 'Active'}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            ), [currentPage, stats, loading, items, viewItemDetails]);
+
+            // FIXED: Improved modal structure to prevent gray layer issues
+            const ItemDetailsModal = useMemo(() => {
+                if (!selectedItem || !showModal) return null;
+                
+                return (
+                    <div className="fixed inset-0 z-50 overflow-y-auto">
+                        {/* FIXED: Simplified backdrop structure */}
+                        <div className="fixed inset-0 bg-gray-500 bg-opacity-75" onClick={closeModal}></div>
+                        
+                        <div className="flex items-center justify-center min-h-screen px-4 py-8">
+                            <div className="relative bg-white rounded-btn shadow-xl max-w-lg w-full mx-auto">
+                                <div className="relative">
+                                    <img 
+                                        src={selectedItem.image} 
+                                        alt={selectedItem.title}
+                                        className="modal-image"
+                                        onError={(e) => {
+                                            e.target.onerror = null;
+                                            e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23e0e0e0'/%3E%3Cpath d='M70 100 L130 100 M100 70 L100 130' stroke='%23999' stroke-width='10'/%3E%3C/svg%3E";
+                                        }}
+                                    />
+                                    <div className={`absolute top-4 right-4 px-3 py-1 text-sm font-medium shadow-md rounded-btn ${
+                                        selectedItem.type === 'lost' ? 'bg-red-100 text-brand-red' : 'bg-green-100 text-brand-green'
+                                    }`}>
+                                        {selectedItem.type === 'lost' ? 'Lost' : 'Found'}
+                                    </div>
+                                    <button 
+                                        onClick={closeModal}
+                                        className="absolute top-4 left-4 bg-white bg-opacity-80 p-2 hover:bg-gray-200 shadow-md rounded-btn transition-all duration-200"
+                                    >
+                                        <svg className="w-5 h-5 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                                
+                                <div className="p-6">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <h3 className="text-2xl font-semibold text-gray-900">{selectedItem.title}</h3>
+                                        {selectedItem.category && (
+                                            <span className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-btn">
+                                                {selectedItem.category}
+                                            </span>
+                                        )}
+                                    </div>
+                                    
+                                    <div className="mb-4 flex flex-wrap gap-2">
+                                        <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 inline-block rounded-btn">
+                                            Reported on {new Date(selectedItem.date).toLocaleDateString()}
+                                        </span>
+                                        
+                                        {selectedItem.location && (
+                                            <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 inline-block rounded-btn">
+                                                Location: {selectedItem.location}
+                                            </span>
+                                        )}
+                                        
+                                        {selectedItem.status === 'returned' && (
+                                            <span className="text-sm text-white bg-green-500 px-2 py-1 inline-block rounded-btn">
+                                                Returned to Owner
+                                            </span>
+                                        )}
+                                    </div>
+                                    
+                                    <p className="text-gray-600 mb-6">{selectedItem.description}</p>
+                                    
+                                    <div className={`p-4 mb-6 border-l-4 shadow-inner rounded-r-btn ${
+                                        selectedItem.type === 'lost' ? 'bg-red-50 border-brand-red' : 'bg-green-50 border-brand-green'
+                                    }`}>
+                                        <h4 className={`font-medium mb-2 ${
+                                            selectedItem.type === 'lost' ? 'text-brand-red' : 'text-brand-green'
+                                        }`}>Contact Information</h4>
+                                        <p className="text-gray-600 text-sm">
+                                            {selectedItem.contactInfo ? (
+                                                <>Contact: <span className="font-medium">{selectedItem.contactInfo}</span></>
+                                            ) : (
+                                                <>To claim this item or provide information, please contact our support team at <a href="mailto:findbackthelost@gmail.com" className="text-brand-red hover:underline">findbackthelost@gmail.com</a></>
+                                            )}
+                                        </p>
+                                    </div>
+                                    
+                                    <div className="flex justify-end">
+                                        <button
+                                            onClick={closeModal}
+                                            className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-6 shadow-md rounded-btn transition-all duration-200"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }, [selectedItem, showModal, closeModal]);
+
+            const DeleteConfirmationModal = useMemo(() => {
+                if (!itemToDelete || !showDeleteModal) return null;
+                
+                return (
+                    <div className="fixed inset-0 z-50 overflow-y-auto">
+                        {/* FIXED: Simplified backdrop structure */}
+                        <div className="fixed inset-0 bg-gray-500 bg-opacity-75"></div>
+                        
+                        <div className="flex items-center justify-center min-h-screen px-4 py-8">
+                            <div className="relative bg-white rounded-btn shadow-xl max-w-md w-full mx-auto">
+                                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                                    <div className="sm:flex sm:items-start">
+                                        <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 bg-red-100 sm:mx-0 sm:h-10 sm:w-10 rounded-full">
+                                            <svg className="h-6 w-6 text-brand-red" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                            </svg>
+                                        </div>
+                                        <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                                            <h3 className="text-lg leading-6 font-medium text-gray-900">
+                                                Admin Authentication Required
+                                            </h3>
+                                            <div className="mt-2">
+                                                <p className="text-sm text-gray-500">
+                                                    Please enter the admin password to delete this item.
+                                                </p>
+                                            </div>
+                                            <div className="mt-4">
+                                                <InputField
+                                                    type="password"
+                                                    placeholder="Admin password"
+                                                    className="w-full px-3 py-2 border border-gray-300 focus:outline-none focus:border-brand-blue-light shadow-sm rounded-btn"
+                                                    value={adminPassword}
+                                                    onChange={handlePasswordChange}
+                                                    disabled={isDeleting}
+                                                    ref={passwordInputRef}
+                                                />
+                                                {passwordError && (
+                                                    <p className="mt-2 text-sm text-red-600">{passwordError}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                                    <button
+                                        type="button"
+                                        className="w-full inline-flex justify-center border border-transparent shadow-md px-4 py-2 bg-brand-red text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm rounded-btn transition-all duration-200 disabled:opacity-50"
+                                        onClick={confirmDelete}
+                                        disabled={isDeleting}
+                                    >
+                                        {isDeleting ? 'Deleting...' : 'Delete'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="mt-3 w-full inline-flex justify-center border border-gray-300 shadow-md px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm rounded-btn transition-all duration-200 disabled:opacity-50"
+                                        onClick={() => {
+                                            setShowDeleteModal(false);
+                                            setAdminPassword('');
+                                            setPasswordError('');
+                                        }}
+                                        disabled={isDeleting}
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }, [itemToDelete, showDeleteModal, adminPassword, passwordError, isDeleting, handlePasswordChange, confirmDelete]);
+
+            const AdminLoginModal = useMemo(() => {
+                if (!showAdminLogin) return null;
+                
+                return (
+                    <div className="fixed inset-0 z-50 overflow-y-auto">
+                        {/* FIXED: Simplified backdrop structure */}
+                        <div className="fixed inset-0 bg-gray-500 bg-opacity-75"></div>
+                        
+                        <div className="flex items-center justify-center min-h-screen px-4 py-8">
+                            <div className="relative bg-white rounded-btn shadow-xl max-w-md w-full mx-auto">
+                                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                                    <div className="sm:flex sm:items-start">
+                                        <div className="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 bg-blue-100 sm:mx-0 sm:h-10 sm:w-10 rounded-full">
+                                            <svg className="h-6 w-6 text-brand-blue-light" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                            </svg>
+                                        </div>
+                                        <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                                            <h3 className="text-lg leading-6 font-medium text-gray-900">
+                                                Admin Login
+                                            </h3>
+                                            <div className="mt-2">
+                                                <p className="text-sm text-gray-500">
+                                                    Please enter the admin password to access admin features.
+                                                </p>
+                                            </div>
+                                            <div className="mt-4">
+                                                <InputField
+                                                    type="password"
+                                                    placeholder="Admin password"
+                                                    className="w-full px-3 py-2 border border-gray-300 focus:outline-none focus:border-brand-blue-light shadow-sm rounded-btn"
+                                                    value={adminPassword}
+                                                    onChange={handlePasswordChange}
+                                                    disabled={isLoggingIn}
+                                                    ref={adminLoginInputRef}
+                                                />
+                                                {passwordError && (
+                                                    <p className="mt-2 text-sm text-red-600">{passwordError}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                                    <button
+                                        type="button"
+                                        className="w-full inline-flex justify-center border border-transparent shadow-md px-4 py-2 bg-brand-blue-light text-base font-medium text-white hover:bg-brand-blue-dark sm:ml-3 sm:w-auto sm:text-sm rounded-btn transition-all duration-200 disabled:opacity-50"
+                                        onClick={handleAdminLogin}
+                                        disabled={isLoggingIn}
+                                    >
+                                        {isLoggingIn ? 'Logging in...' : 'Login'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="mt-3 w-full inline-flex justify-center border border-gray-300 shadow-md px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm rounded-btn transition-all duration-200 disabled:opacity-50"
+                                        onClick={toggleAdminLogin}
+                                        disabled={isLoggingIn}
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }, [showAdminLogin, adminPassword, passwordError, isLoggingIn, handlePasswordChange, handleAdminLogin, toggleAdminLogin]);
+
+            const Notification = useMemo(() => {
+                if (!notification.show) return null;
+                
+                const bgColor = notification.type === 'success' 
+                    ? 'bg-green-600' 
+                    : notification.type === 'error' 
+                        ? 'bg-brand-red' 
+                        : 'bg-brand-blue-light';
+                
+                return (
+                    <div className={`fixed bottom-4 right-4 px-6 py-3 shadow-lg ${bgColor} text-white z-50 flex items-center rounded-btn`}>
+                        {notification.type === 'success' ? (
+                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        ) : notification.type === 'error' ? (
+                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        ) : (
+                            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                        )}
+                        {notification.message}
+                    </div>
+                );
+            }, [notification]);
+
+            const Footer = useMemo(() => (
+                <footer className="bg-brand-black text-white py-8 mt-auto">
+                    <div className="container mx-auto px-4">
+                        <div className="flex flex-col md:flex-row justify-between items-center">
+                            <div className="mb-4 md:mb-0">
+                                <h2 className="text-xl font-bold">FindBack</h2>
+                                <p className="text-white text-opacity-80 text-sm">Connecting lost items with their owners</p>
+                            </div>
+                            <div className="flex space-x-6">
+                                <a href="#" className="text-white text-opacity-80 hover:text-white transition-all duration-200">About</a>
+                                <a href="mailto:findbackthelost@gmail.com" className="text-white text-opacity-80 hover:text-white transition-all duration-200">Contact</a>
+                                <a href="#" className="text-white text-opacity-80 hover:text-white transition-all duration-200">Privacy</a>
+                                <a href="#" className="text-white text-opacity-80 hover:text-white transition-all duration-200">Terms</a>
+                            </div>
+                        </div>
+                        <div className="mt-8 text-center text-white text-opacity-80 text-sm">
+                            &copy; {new Date().getFullYear()} FindBack. All rights reserved.
+                        </div>
+                    </div>
+                </footer>
+            ), []);
+
+            return (
+                <div className="min-h-screen flex flex-col bg-brand-white">
+                    {Header}
+                    
+                    {currentPage === 'home' && HomePage}
+                    {currentPage === 'items' && ItemsPage}
+                    {currentPage === 'report' && ReportItemPage}
+                    {currentPage === 'stats' && StatsPage}
+                    
+                    {ItemDetailsModal}
+                    {DeleteConfirmationModal}
+                    {AdminLoginModal}
+                    {Notification}
+                    
+                    {Footer}
+                </div>
+            );
+        });
+
+        // Render the app
+        ReactDOM.render(<App />, document.getElementById('app'));
+    </script>
+</body>
+</html>
